@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Roda Keberuntungan</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;800&display=swap');
+        
+        body {
+            font-family: 'Poppins', sans-serif;
+            background-color: #f3f4f6;
+            overflow-x: hidden;
+        }
+
+        .wheel-container {
+            position: relative;
+            width: 100%;
+            max-width: 500px;
+            aspect-ratio: 1;
+            margin: 0 auto;
+        }
+
+        canvas {
+            width: 100%;
+            height: 100%;
+            transition: transform 0.1s;
+            filter: drop-shadow(0 10px 15px rgba(0,0,0,0.2));
+        }
+
+        /* Pointer Segitiga */
+        .pointer {
+            position: absolute;
+            top: -20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 0; 
+            height: 0; 
+            border-left: 20px solid transparent;
+            border-right: 20px solid transparent;
+            border-top: 40px solid #ef4444;
+            z-index: 10;
+            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+        }
+
+        /* Tombol Rahasia */
+        .secret-btn {
+            position: fixed;
+            bottom: 10px;
+            right: 10px;
+            width: 30px;
+            height: 30px;
+            background: transparent;
+            border-radius: 50%;
+            cursor: pointer;
+            z-index: 9999;
+        }
+        /* Area klik lebih besar tapi visual kecil */
+        .secret-btn::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            width: 15px;
+            height: 15px;
+            background: #000;
+            opacity: 0.05; 
+            border-radius: 50%;
+            transition: opacity 0.3s;
+        }
+        .secret-btn:hover::after {
+            opacity: 0.3;
+        }
+
+        .modal {
+            display: none;
+            background-color: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(2px);
+        }
+        .modal.active {
+            display: flex;
+        }
+
+        /* Scrollbar untuk modal */
+        .modal-content {
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        /* Confetti sederhana */
+        .confetti {
+            position: fixed;
+            width: 10px;
+            height: 10px;
+            background-color: #f00;
+            animation: fall linear forwards;
+            z-index: 100;
+        }
+        @keyframes fall {
+            to { transform: translateY(100vh) rotate(720deg); }
+        }
+    </style>
+</head>
+<body class="bg-slate-100 min-h-screen flex flex-col md:flex-row">
+
+    <!-- Sidebar Input -->
+    <div class="w-full md:w-1/3 p-6 bg-white shadow-lg z-20 flex flex-col gap-4">
+        <h1 class="text-3xl font-extrabold text-slate-800 text-center mb-2">🎡 Roda Ajaib</h1>
+        
+        <div class="flex-1 flex flex-col">
+            <div class="flex justify-between items-center mb-2">
+                <label class="font-semibold text-slate-600">Daftar Nama:</label>
+                <div class="flex items-center gap-2">
+                    <input type="checkbox" id="autoRemoveToggle" class="w-4 h-4 text-indigo-600">
+                    <label for="autoRemoveToggle" class="text-xs text-slate-500 cursor-pointer select-none">Hapus Pemenang</label>
+                </div>
+            </div>
+            <textarea id="nameInput" class="w-full flex-1 border-2 border-slate-200 rounded-lg p-3 focus:outline-none focus:border-indigo-500 resize-none text-sm font-mono" placeholder="Masukkan nama peserta...">Budi
+Siti
+Andi
+Dewi
+Rina
+Joko
+Bambang
+Lestari</textarea>
+        </div>
+
+        <div class="flex gap-2">
+            <button onclick="manualUpdateWheel()" class="flex-1 bg-slate-800 text-white py-3 rounded-lg font-bold hover:bg-slate-700 transition shadow-md">Update Roda</button>
+            <button onclick="shuffleNames()" class="bg-indigo-100 text-indigo-700 px-4 rounded-lg font-bold hover:bg-indigo-200 transition" title="Acak Urutan">🔀</button>
+        </div>
+    </div>
+
+    <!-- Area Roda -->
+    <div class="w-full md:w-2/3 flex flex-col items-center justify-center p-4 relative overflow-hidden bg-slate-50">
+        
+        <div class="wheel-container mb-8">
+            <div class="pointer"></div>
+            <canvas id="wheelCanvas" width="800" height="800"></canvas>
+            
+            <!-- Tombol Spin Tengah -->
+            <button onclick="spinWheel()" id="spinBtn" class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-20 h-20 bg-white rounded-full shadow-xl border-4 border-indigo-100 font-extrabold text-indigo-600 flex items-center justify-center text-xl hover:scale-110 active:scale-95 transition z-10">
+                SPIN
+            </button>
+        </div>
+
+        <!-- Tampilan Hasil -->
+        <div id="resultContainer" class="hidden text-center animate-bounce z-20">
+            <h2 class="text-xl text-slate-500 font-semibold">Pemenangnya adalah:</h2>
+            <div id="winnerName" class="text-5xl font-extrabold text-indigo-600 mt-2 filter drop-shadow-lg">Nama</div>
+        </div>
+
+    </div>
+
+    <!-- Tombol Rahasia -->
+    <div class="secret-btn" onclick="openSecretMenu()" title="???"></div>
+
+    <!-- Menu Rahasia Modal -->
+    <div id="secretModal" class="modal fixed inset-0 z-50 items-center justify-center p-4">
+        <div class="modal-content bg-white p-6 rounded-xl shadow-2xl w-full max-w-md border-t-4 border-red-600">
+            <div class="flex justify-between items-center mb-4 border-b pb-2">
+                <h3 class="text-xl font-bold text-red-600">🔧 Menu Dewa (Advanced)</h3>
+                <button onclick="clearAllRigs()" class="text-xs text-red-400 hover:text-red-600 underline">Reset Semua</button>
+            </div>
+            
+            <div class="space-y-4">
+                <!-- Priority Queue -->
+                <div class="bg-green-50 p-3 rounded-lg border border-green-100">
+                    <h4 class="text-sm font-bold text-green-800 mb-2">🏆 Muncul Duluan (Urutan 1-5)</h4>
+                    <div class="space-y-2" id="priorityInputs">
+                        <!-- Diisi via JS -->
+                    </div>
+                </div>
+
+                <!-- Last Queue -->
+                <div class="bg-orange-50 p-3 rounded-lg border border-orange-100">
+                    <h4 class="text-sm font-bold text-orange-800 mb-2">🐌 Muncul Terakhir (2 Orang)</h4>
+                    <p class="text-xs text-orange-600 mb-2 italic">Mereka tidak akan terpilih secara acak sampai hanya tersisa mereka di daftar.</p>
+                    <div class="space-y-2" id="lastInputs">
+                        <!-- Diisi via JS -->
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex justify-end gap-2 mt-6 pt-4 border-t">
+                <button onclick="closeSecretMenu()" class="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300 text-sm font-bold text-gray-700">Batal</button>
+                <button onclick="saveSecretSettings()" class="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-bold shadow-lg transform hover:-translate-y-0.5 transition">Simpan Konfigurasi</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('wheelCanvas');
+        const ctx = canvas.getContext('2d');
+        const spinBtn = document.getElementById('spinBtn');
+        const resultContainer = document.getElementById('resultContainer');
+        const winnerNameDiv = document.getElementById('winnerName');
+        const nameInput = document.getElementById('nameInput');
+        const autoRemoveToggle = document.getElementById('autoRemoveToggle');
+        
+        let names = [];
+        let colors = [];
+        let currentRotation = 0;
+        let isSpinning = false;
+        
+        // State Curang (Menyimpan NAMA, bukan index, agar aman jika list berubah)
+        let priorityQueue = [null, null, null, null, null]; // 5 Slot
+        let lastQueue = [null, null]; // 2 Slot
+
+        // Inisialisasi awal
+        window.onload = () => {
+            updateWheel();
+        };
+
+        function getTextareaNames() {
+            return nameInput.value.split('\n').filter(n => n.trim() !== '');
+        }
+
+        function shuffleNames() {
+            let tempNames = getTextareaNames();
+            for (let i = tempNames.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [tempNames[i], tempNames[j]] = [tempNames[j], tempNames[i]];
+            }
+            nameInput.value = tempNames.join('\n');
+            updateWheel();
+        }
+
+        function manualUpdateWheel() {
+            // Reset hasil jika user manual update
+            resultContainer.classList.add('hidden');
+            updateWheel();
+        }
+
+        function updateWheel() {
+            names = getTextareaNames();
+            
+            // Generate warna pastel
+            colors = names.map((_, i) => {
+                const hue = i * (360 / names.length);
+                return `hsl(${hue}, 70%, 60%)`;
+            });
+
+            drawWheel();
+        }
+
+        function drawWheel() {
+            const centerX = canvas.width / 2;
+            const centerY = canvas.height / 2;
+            const radius = canvas.width / 2 - 20; 
+            const step = (2 * Math.PI) / names.length;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            ctx.save();
+            ctx.translate(centerX, centerY);
+            ctx.rotate(currentRotation); 
+            
+            for (let i = 0; i < names.length; i++) {
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.arc(0, 0, radius, i * step, (i + 1) * step);
+                ctx.fillStyle = colors[i];
+                ctx.fill();
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = '#fff';
+                ctx.stroke();
+
+                ctx.save();
+                ctx.rotate((i * step) + (step / 2));
+                ctx.translate(radius * 0.6, 0);
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 28px Poppins';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                
+                let displayName = names[i];
+                if (displayName.length > 14) displayName = displayName.substring(0, 11) + '...';
+                
+                ctx.fillText(displayName, 0, 0);
+                ctx.restore();
+            }
+            
+            // Lingkaran tengah
+            ctx.beginPath();
+            ctx.arc(0, 0, 40, 0, 2 * Math.PI);
+            ctx.fillStyle = '#fff';
+            ctx.fill();
+            ctx.shadowColor = "rgba(0,0,0,0.2)";
+            ctx.shadowBlur = 10;
+            ctx.restore();
+        }
+
+        function spinWheel() {
+            if (isSpinning) return;
+            if (names.length < 2 && names.length > 0) {
+                // Jika cuma 1, langsung menang
+                alert(`Pemenang otomatis: ${names[0]}`);
+                if(autoRemoveToggle.checked) {
+                    nameInput.value = "";
+                    updateWheel();
+                }
+                return;
+            }
+            if (names.length === 0) {
+                alert("Masukkan nama peserta dulu!");
+                return;
+            }
+
+            isSpinning = true;
+            resultContainer.classList.add('hidden');
+            spinBtn.disabled = true;
+            spinBtn.classList.add('opacity-50');
+
+            // --- LOGIKA PENENTUAN PEMENANG (CURANG vs JUJUR) ---
+            
+            let winningName = null;
+            let winningIndex = -1;
+
+            // 1. Cek Priority Queue (Muncul Duluan)
+            // Cari nama pertama di antrian yang MASIH ADA di daftar saat ini
+            for (let i = 0; i < priorityQueue.length; i++) {
+                const queuedName = priorityQueue[i];
+                if (queuedName && names.includes(queuedName)) {
+                    winningName = queuedName;
+                    // Hapus dari antrian agar urutan selanjutnya naik
+                    priorityQueue[i] = null; 
+                    // Geser antrian (opsional, tapi biarkan null biar slotnya jelas)
+                    break;
+                }
+            }
+
+            // 2. Jika tidak ada di Priority, pilih Random (tapi hindari Last Queue)
+            if (!winningName) {
+                // Filter kandidat: Semua nama dikurangi yang ada di Last Queue
+                // KECUALI jika sisa nama hanya yang ada di Last Queue
+                
+                const safeCandidates = names.filter(n => !lastQueue.includes(n));
+                
+                if (safeCandidates.length > 0) {
+                    // Masih ada kandidat aman, pilih dari mereka
+                    const randIdx = Math.floor(Math.random() * safeCandidates.length);
+                    winningName = safeCandidates[randIdx];
+                } else {
+                    // Terpaksa pilih dari Last Queue (karena cuma mereka yang tersisa)
+                    const randIdx = Math.floor(Math.random() * names.length);
+                    winningName = names[randIdx];
+                }
+            }
+
+            // Dapatkan index dari nama yang terpilih
+            winningIndex = names.indexOf(winningName);
+            console.log(`Target: ${winningName} (Index: ${winningIndex})`);
+
+            // --- ANIMASI ---
+
+            const sliceAngle = (2 * Math.PI) / names.length;
+            const numberOfSpins = 5 + Math.floor(Math.random() * 3);
+            const fullSpins = numberOfSpins * (2 * Math.PI);
+            
+            // Logika sudut sama seperti sebelumnya
+            const randomOffset = (Math.random() - 0.5) * (sliceAngle * 0.8); 
+            const targetRotation = fullSpins + (1.5 * Math.PI) - (winningIndex * sliceAngle) + randomOffset;
+            
+            const currentMod = currentRotation % (2 * Math.PI);
+            currentRotation = currentMod;
+            const totalRotationNeeded = targetRotation - currentMod;
+            
+            const duration = 4500;
+            const startTime = performance.now();
+
+            function animate(currentTime) {
+                const elapsed = currentTime - startTime;
+                const t = Math.min(elapsed / duration, 1);
+                
+                // Ease Out Quart
+                const ease = 1 - Math.pow(1 - t, 4);
+                
+                currentRotation = currentMod + (totalRotationNeeded * ease);
+                drawWheel();
+
+                if (t < 1) {
+                    requestAnimationFrame(animate);
+                } else {
+                    finishSpin(winningName);
+                }
+            }
+            
+            requestAnimationFrame(animate);
+        }
+
+        function finishSpin(winnerName) {
+            isSpinning = false;
+            spinBtn.disabled = false;
+            spinBtn.classList.remove('opacity-50');
+            
+            winnerNameDiv.innerText = winnerName;
+            resultContainer.classList.remove('hidden');
+            createConfetti();
+
+            // Hapus Pemenang Jika Mode Auto Remove Aktif
+            if (autoRemoveToggle.checked) {
+                setTimeout(() => {
+                    const newNames = names.filter(n => n !== winnerName);
+                    nameInput.value = newNames.join('\n');
+                    updateWheel(); // Redraw tanpa pemenang
+                }, 2000); // Delay 2 detik biar sempat lihat hasil
+            }
+        }
+
+        function createConfetti() {
+            for(let i=0; i<60; i++) {
+                const conf = document.createElement('div');
+                conf.classList.add('confetti');
+                conf.style.left = Math.random() * 100 + 'vw';
+                conf.style.top = '-20px';
+                conf.style.backgroundColor = `hsl(${Math.random()*360}, 100%, 50%)`;
+                conf.style.animationDuration = (Math.random() * 2 + 1.5) + 's';
+                document.body.appendChild(conf);
+                setTimeout(() => conf.remove(), 4000);
+            }
+        }
+
+        /* --- LOGIKA RAHASIA UI --- */
+
+        function openSecretMenu() {
+            // Refresh list di dropdown karena nama mungkin berubah
+            names = getTextareaNames();
+            renderSecretInputs();
+            document.getElementById('secretModal').classList.add('active');
+        }
+
+        function closeSecretMenu() {
+            document.getElementById('secretModal').classList.remove('active');
+        }
+
+        function clearAllRigs() {
+            priorityQueue = [null, null, null, null, null];
+            lastQueue = [null, null];
+            renderSecretInputs();
+        }
+
+        function createSelectHTML(id, label, value) {
+            let options = `<option value="">-- (Kosong/Acak) --</option>`;
+            names.forEach(name => {
+                const selected = name === value ? 'selected' : '';
+                options += `<option value="${name}" ${selected}>${name}</option>`;
+            });
+            
+            return `
+                <div class="flex items-center gap-2">
+                    <span class="text-xs font-bold w-16 text-right">${label}:</span>
+                    <select id="${id}" class="flex-1 p-1 border rounded text-sm bg-white focus:ring-2 focus:ring-red-500 outline-none">
+                        ${options}
+                    </select>
+                </div>
+            `;
+        }
+
+        function renderSecretInputs() {
+            // Render Priority Inputs
+            const pContainer = document.getElementById('priorityInputs');
+            pContainer.innerHTML = '';
+            for(let i=0; i<5; i++) {
+                pContainer.innerHTML += createSelectHTML(`p_input_${i}`, `Urutan ${i+1}`, priorityQueue[i]);
+            }
+
+            // Render Last Inputs
+            const lContainer = document.getElementById('lastInputs');
+            lContainer.innerHTML = '';
+            for(let i=0; i<2; i++) {
+                lContainer.innerHTML += createSelectHTML(`l_input_${i}`, `Terakhir ${i+1}`, lastQueue[i]);
+            }
+        }
+
+        function saveSecretSettings() {
+            // Simpan Priority
+            for(let i=0; i<5; i++) {
+                const val = document.getElementById(`p_input_${i}`).value;
+                priorityQueue[i] = val === "" ? null : val;
+            }
+
+            // Simpan Last
+            for(let i=0; i<2; i++) {
+                const val = document.getElementById(`l_input_${i}`).value;
+                lastQueue[i] = val === "" ? null : val;
+            }
+
+            closeSecretMenu();
+            alert("Konfigurasi Dewa Disimpan! 🤫");
+        }
+
+        // Tutup modal jika klik di luar box
+        document.getElementById('secretModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeSecretMenu();
+            }
+        });
+
+    </script>
+</body>
+</html>
